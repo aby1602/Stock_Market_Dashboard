@@ -5,6 +5,10 @@ export interface User {
   email: string
   role: UserRole
   name: string
+  username: string
+  password: string
+  createdAt: Date
+  lastLogin: Date
 }
 
 export interface Stock {
@@ -16,6 +20,16 @@ export interface Stock {
   change: number
   changePercent: number
   lastUpdated: Date
+  priceHistory: PricePoint[]
+  volume: number
+  marketCap: number
+  sector: string
+}
+
+export interface PricePoint {
+  timestamp: Date
+  price: number
+  volume: number
 }
 
 export interface News {
@@ -24,6 +38,7 @@ export interface News {
   impact: number // 1-5
   timestamp: Date
   publishedBy: string
+  category: string
 }
 
 export interface Portfolio {
@@ -51,12 +66,33 @@ export interface Trade {
   price: number
   timestamp: Date
   executedBy?: string
+  status: "pending" | "executed" | "cancelled"
 }
 
 export interface Participant {
   id: string
   name: string
   email: string
+  username: string
   walletBalance: number
   totalPortfolioValue: number
+  joinedAt: Date
+  lastActive: Date
+  riskTolerance: "low" | "medium" | "high"
+}
+
+export interface ActivityLog {
+  id: string
+  userId: string
+  action: string
+  details: string
+  timestamp: Date
+  category: "trade" | "admin" | "system" | "user"
+}
+
+export interface SystemState {
+  lastReset: Date
+  totalUsers: number
+  totalTrades: number
+  systemStatus: "active" | "maintenance"
 }

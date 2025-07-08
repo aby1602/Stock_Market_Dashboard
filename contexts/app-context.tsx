@@ -1,8 +1,10 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState } from "react"
-import type { Stock, News, Portfolio, Trade, Participant } from "@/types"
+import { createContext, useContext, useState, useEffect } from "react"
+import type { Stock, News, Portfolio, Trade, Participant, SystemState } from "@/types"
+import { SimulatedDatabase } from "@/lib/database"
+import { generateRealisticStocks, generateRealisticParticipants, generateInitialNews } from "@/lib/mock-data"
 
 interface AppContextType {
   stocks: Stock[]
@@ -10,130 +12,249 @@ interface AppContextType {
   portfolios: Portfolio[]
   trades: Trade[]
   participants: Participant[]
+  systemState: SystemState
   updateStock: (stockId: string, newPrice: number) => void
-  addStock: (stock: Omit<Stock, "id" | "lastUpdated">) => void
+  addStock: (stock: Omit<Stock, "id" | "lastUpdated" | "priceHistory">) => void
   deleteStock: (stockId: string) => void
-  publishNews: (headline: string, impact: number, publishedBy: string) => void
+  publishNews: (headline: string, impact: number, publishedBy: string, category: string) => void
   updateWalletBalance: (participantId: string, newBalance: number) => void
   addTrade: (trade: Omit<Trade, "id" | "timestamp">) => void
+  resetSystem: () => void
+  simulateLiveTrading: () => void
+  isLiveTrading: boolean
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined)
 
-// Mock data
-const initialStocks: Stock[] = [
-  {
-    id: "1",
-    symbol: "AAPL",
-    name: "Apple Inc.",
-    price: 150.25,
-    previousPrice: 148.5,
-    change: 1.75,
-    changePercent: 1.18,
-    lastUpdated: new Date(),
-  },
-  {
-    id: "2",
-    symbol: "GOOGL",
-    name: "Alphabet Inc.",
-    price: 2750.8,
-    previousPrice: 2780.2,
-    change: -29.4,
-    changePercent: -1.06,
-    lastUpdated: new Date(),
-  },
-  {
-    id: "3",
-    symbol: "MSFT",
-    name: "Microsoft Corporation",
-    price: 305.15,
-    previousPrice: 302.9,
-    change: 2.25,
-    changePercent: 0.74,
-    lastUpdated: new Date(),
-  },
-]
-
-const initialNews: News[] = [
-  {
-    id: "1",
-    headline: "Tech stocks rally on positive earnings reports",
-    impact: 4,
-    timestamp: new Date(Date.now() - 3600000),
-    publishedBy: "Admin User",
-  },
-  {
-    id: "2",
-    headline: "Federal Reserve hints at interest rate changes",
-    impact: 5,
-    timestamp: new Date(Date.now() - 7200000),
-    publishedBy: "Admin User",
-  },
-]
-
-const initialParticipants: Participant[] = [
-  {
-    id: "3",
-    name: "Participant User",
-    email: "participant@example.com",
-    walletBalance: 10000,
-    totalPortfolioValue: 15000,
-  },
-]
-
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [stocks, setStocks] = useState<Stock[]>(initialStocks)
-  const [news, setNews] = useState<News[]>(initialNews)
+  const [stocks, setStocks] = useState<Stock[]>([])
+  const [news, setNews] = useState<News[]>([])
   const [portfolios, setPortfolios] = useState<Portfolio[]>([])
   const [trades, setTrades] = useState<Trade[]>([])
-  const [participants, setParticipants] = useState<Participant[]>(initialParticipants)
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [systemState, setSystemState] = useState<SystemState>({
+    lastReset: new Date(),
+    totalUsers: 0,
+    totalTrades: 0,
+    systemStatus: "active",
+  })
+  const [isLiveTrading, setIsLiveTrading] = useState(false)
+
+  const db = SimulatedDatabase.getInstance()
+
+  // Initialize data from database or create initial data
+  useEffect(() => {
+    const loadData = () => {
+      try {
+        let loadedStocks = db.getStocks()
+        let loadedParticipants = db.getParticipants()
+        let loadedNews = db.getNews()
+        const loadedTrades = db.getTrades()
+        const loadedSystemState = db.getSystemState()
+
+        // Convert date strings back to Date objects
+        if (loadedStocks.length > 0) {
+          loadedStocks = loadedStocks.map((stock: any) => ({
+            ...stock,
+            lastUpdated: new Date(stock.lastUpdated),
+            priceHistory:
+              stock.priceHistory?.map((point: any) => ({
+                ...point,
+                timestamp: new Date(point.timestamp),
+              })) || [],
+          }))
+        } else {
+          loadedStocks = generateRealisticStocks()
+          db.saveStocks(loadedStocks)
+        }
+
+        if (loadedParticipants.length > 0) {
+          loadedParticipants = loadedParticipants.map((participant: any) => ({
+            ...participant,
+            joinedAt: new Date(participant.joinedAt),
+            lastActive: new Date(participant.lastActive),
+          }))
+        } else {
+          loadedParticipants = generateRealisticParticipants()
+          db.saveParticipants(loadedParticipants)
+        }
+
+        if (loadedNews.length > 0) {
+          loadedNews = loadedNews.map((news: any) => ({
+            ...news,
+            timestamp: new Date(news.timestamp),
+          }))
+        } else {
+          loadedNews = generateInitialNews()
+          db.saveNews(loadedNews)
+        }
+
+        const processedTrades = loadedTrades.map((trade: any) => ({
+          ...trade,
+          timestamp: new Date(trade.timestamp),
+        }))
+
+        const processedSystemState = {
+          ...loadedSystemState,
+          lastReset: new Date(loadedSystemState.lastReset),
+        }
+
+        setStocks(loadedStocks)
+        setParticipants(loadedParticipants)
+        setNews(loadedNews)
+        setTrades(processedTrades)
+        setSystemState(processedSystemState)
+      } catch (error) {
+        console.error("Error loading data:", error)
+        // Fallback to initial data
+        const newStocks = generateRealisticStocks()
+        const newParticipants = generateRealisticParticipants()
+        const newNews = generateInitialNews()
+
+        setStocks(newStocks)
+        setParticipants(newParticipants)
+        setNews(newNews)
+        setTrades([])
+        setSystemState({
+          lastReset: new Date(),
+          totalUsers: 0,
+          totalTrades: 0,
+          systemStatus: "active",
+        })
+      }
+    }
+
+    loadData()
+  }, [])
+
+  // Live trading simulation
+  useEffect(() => {
+    let interval: NodeJS.Timeout
+
+    if (isLiveTrading) {
+      interval = setInterval(() => {
+        setStocks((prevStocks) => {
+          const updatedStocks = prevStocks.map((stock) => {
+            // Random price movement (±2%)
+            const changePercent = (Math.random() - 0.5) * 0.04
+            const newPrice = stock.price * (1 + changePercent)
+            const change = newPrice - stock.price
+            const changePercentValue = (change / stock.price) * 100
+
+            // Add to price history
+            const newPricePoint = {
+              timestamp: new Date(),
+              price: newPrice,
+              volume: Math.floor(Math.random() * 1000000) + 100000,
+            }
+
+            return {
+              ...stock,
+              previousPrice: stock.price,
+              price: newPrice,
+              change,
+              changePercent: changePercentValue,
+              lastUpdated: new Date(),
+              priceHistory: [...stock.priceHistory.slice(-99), newPricePoint], // Keep last 100 points
+              volume: stock.volume + newPricePoint.volume,
+            }
+          })
+
+          db.saveStocks(updatedStocks)
+          return updatedStocks
+        })
+      }, 5000) // Update every 5 seconds
+    }
+
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [isLiveTrading])
 
   const updateStock = (stockId: string, newPrice: number) => {
-    setStocks((prev) =>
-      prev.map((stock) => {
+    setStocks((prev) => {
+      const updated = prev.map((stock) => {
         if (stock.id === stockId) {
           const change = newPrice - stock.price
           const changePercent = (change / stock.price) * 100
-          return {
+
+          const newPricePoint = {
+            timestamp: new Date(),
+            price: newPrice,
+            volume: Math.floor(Math.random() * 1000000) + 100000,
+          }
+
+          const updatedStock = {
             ...stock,
             previousPrice: stock.price,
             price: newPrice,
             change,
             changePercent,
             lastUpdated: new Date(),
+            priceHistory: [...stock.priceHistory.slice(-99), newPricePoint],
           }
+          return updatedStock
         }
         return stock
-      }),
-    )
+      })
+
+      db.saveStocks(updated)
+      return updated
+    })
   }
 
-  const addStock = (stockData: Omit<Stock, "id" | "lastUpdated">) => {
+  const addStock = (stockData: Omit<Stock, "id" | "lastUpdated" | "priceHistory">) => {
     const newStock: Stock = {
       ...stockData,
       id: Date.now().toString(),
       lastUpdated: new Date(),
+      priceHistory: [
+        {
+          timestamp: new Date(),
+          price: stockData.price,
+          volume: Math.floor(Math.random() * 1000000) + 100000,
+        },
+      ],
     }
-    setStocks((prev) => [...prev, newStock])
+
+    setStocks((prev) => {
+      const updated = [...prev, newStock]
+      db.saveStocks(updated)
+      return updated
+    })
   }
 
   const deleteStock = (stockId: string) => {
-    setStocks((prev) => prev.filter((stock) => stock.id !== stockId))
+    setStocks((prev) => {
+      const updated = prev.filter((stock) => stock.id !== stockId)
+      db.saveStocks(updated)
+      return updated
+    })
   }
 
-  const publishNews = (headline: string, impact: number, publishedBy: string) => {
+  const publishNews = (headline: string, impact: number, publishedBy: string, category: string) => {
     const newNews: News = {
       id: Date.now().toString(),
       headline,
       impact,
       timestamp: new Date(),
       publishedBy,
+      category,
     }
-    setNews((prev) => [newNews, ...prev])
+
+    setNews((prev) => {
+      const updated = [newNews, ...prev]
+      db.saveNews(updated)
+      return updated
+    })
   }
 
   const updateWalletBalance = (participantId: string, newBalance: number) => {
-    setParticipants((prev) => prev.map((p) => (p.id === participantId ? { ...p, walletBalance: newBalance } : p)))
+    setParticipants((prev) => {
+      const updated = prev.map((p) => (p.id === participantId ? { ...p, walletBalance: newBalance } : p))
+      db.saveParticipants(updated)
+      return updated
+    })
   }
 
   const addTrade = (tradeData: Omit<Trade, "id" | "timestamp">) => {
@@ -141,8 +262,53 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       ...tradeData,
       id: Date.now().toString(),
       timestamp: new Date(),
+      status: "executed",
     }
-    setTrades((prev) => [newTrade, ...prev])
+
+    setTrades((prev) => {
+      const updated = [newTrade, ...prev]
+      db.saveTrades(updated)
+      return updated
+    })
+
+    // Update system state
+    setSystemState((prev) => {
+      const updated = { ...prev, totalTrades: prev.totalTrades + 1 }
+      db.saveSystemState(updated)
+      return updated
+    })
+  }
+
+  const resetSystem = () => {
+    // Reset all data to initial state
+    const newStocks = generateRealisticStocks()
+    const newParticipants = generateRealisticParticipants()
+    const newNews = generateInitialNews()
+    const newSystemState: SystemState = {
+      lastReset: new Date(),
+      totalUsers: 0,
+      totalTrades: 0,
+      systemStatus: "active",
+    }
+
+    setStocks(newStocks)
+    setParticipants(newParticipants)
+    setNews(newNews)
+    setTrades([])
+    setPortfolios([])
+    setSystemState(newSystemState)
+
+    // Clear database
+    db.resetAll()
+    db.saveStocks(newStocks)
+    db.saveParticipants(newParticipants)
+    db.saveNews(newNews)
+    db.saveTrades([])
+    db.saveSystemState(newSystemState)
+  }
+
+  const simulateLiveTrading = () => {
+    setIsLiveTrading(!isLiveTrading)
   }
 
   return (
@@ -153,12 +319,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         portfolios,
         trades,
         participants,
+        systemState,
         updateStock,
         addStock,
         deleteStock,
         publishNews,
         updateWalletBalance,
         addTrade,
+        resetSystem,
+        simulateLiveTrading,
+        isLiveTrading,
       }}
     >
       {children}
